@@ -1,0 +1,75 @@
+{
+    "name": "vggt-omega",
+    "url": "https://github.com/harpreetsahota204/vggt_omega",
+    "models": [
+        {
+            "base_name": "facebook/VGGT-Omega-1B-512",
+            "base_filename": "vggt_omega_1b_512.pt",
+            "author": "Meta AI / Oxford VGG",
+            "license": "CC BY-NC 4.0",
+            "source": "https://huggingface.co/facebook/VGGT-Omega",
+            "description": "VGGT-Omega (CVPR 2026) is a feed-forward multi-view 3D reconstruction model. Given a video or set of images, it predicts per-frame depth maps with confidence and consistent camera poses in a single forward pass, enabling dense 3D scene reconstruction without SfM or iterative refinement.",
+            "tags": [
+                "depth",
+                "threed",
+                "video",
+                "reconstruction",
+                "camera-pose"
+            ],
+            "date_added": "2026-05-15",
+            "requirements": {
+                "packages": [
+                    "vggt-omega@git+https://github.com/facebookresearch/vggt-omega.git",
+                    "torch",
+                    "torchvision",
+                    "open3d",
+                    "einops",
+                    "safetensors",
+                    "huggingface_hub",
+                    "opencv-python"
+                ],
+                "cpu": {
+                    "support": false
+                },
+                "gpu": {
+                    "support": true
+                }
+            }
+        },
+        {
+            "base_name": "facebook/VGGT-Omega-1B-256-Text",
+            "base_filename": "vggt_omega_1b_256_text.pt",
+            "author": "Meta AI / Oxford VGG",
+            "license": "CC BY-NC 4.0",
+            "source": "https://huggingface.co/facebook/VGGT-Omega",
+            "description": "VGGT-Omega 256-resolution variant with text-alignment head (CVPR 2026). Produces per-frame depth maps, camera poses, and a 2048-dimensional L2-normalized scene embedding suitable for scene-level similarity search. Use image_resolution=256 and enable_alignment=True.",
+            "tags": [
+                "depth",
+                "threed",
+                "video",
+                "reconstruction",
+                "camera-pose",
+                "embeddings"
+            ],
+            "date_added": "2026-05-15",
+            "requirements": {
+                "packages": [
+                    "vggt-omega@git+https://github.com/facebookresearch/vggt-omega.git",
+                    "torch",
+                    "torchvision",
+                    "open3d",
+                    "einops",
+                    "safetensors",
+                    "huggingface_hub",
+                    "opencv-python"
+                ],
+                "cpu": {
+                    "support": false
+                },
+                "gpu": {
+                    "support": true
+                }
+            }
+        }
+    ]
+}
