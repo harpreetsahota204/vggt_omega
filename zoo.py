@@ -46,9 +46,9 @@ class VGGTOmegaModelConfig(fout.TorchImageModelConfig):
             point cloud filtering. Default 50.0.
         video_sample_fps (float): target frames per second to extract from the
             input video. Auto-reduced for long videos to stay within max_frames.
-            Default 2.0.
+            Default 1.0.
         max_frames (int): hard cap on frames fed to VGGT-Omega per forward pass.
-            Keeps VRAM bounded regardless of video length. Default 16.
+            Keeps VRAM bounded regardless of video length. Default 50.
         image_resolution (int): tokeniser resolution — 512 for the 1B-512
             checkpoint, 256 for the 1B-256-Text checkpoint. Default 512.
         enable_alignment (bool): activate the TextAlignmentHead and store a
@@ -110,15 +110,8 @@ class VGGTOmegaModel(fom.Model, fom.SamplesMixin):
         self.config = config
         self._fields: Dict = {}
 
-        if torch.cuda.is_available():
-            self._device = torch.device("cuda")
-            cap = torch.cuda.get_device_capability()
-            self._dtype = torch.bfloat16 if cap[0] >= 8 else torch.float16
-        else:
-            self._device = torch.device("cpu")
-            self._dtype = torch.float32
-
-        print(f"[VGGTOmegaModel] Device: {self._device}  |  dtype: {self._dtype}")
+        self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print(f"[VGGTOmegaModel] Device: {self._device}")
 
         model = VGGTOmega(enable_alignment=config.enable_alignment)
         state_dict = torch.load(config.model_path, map_location="cpu", weights_only=True)
@@ -233,12 +226,14 @@ class VGGTOmegaModel(fom.Model, fom.SamplesMixin):
                 predictions["images"].shape[-2:],
             )
 
-            depth_all  = predictions["depth"].detach().float().cpu().numpy()      # [1, N, H, W, 1]
-            conf_all   = predictions["depth_conf"].detach().float().cpu().numpy() # [1, N, H, W]
-            extri_all  = extrinsics.detach().float().cpu().numpy()                # [1, N, 3, 4]
-            intri_all  = intrinsics.detach().float().cpu().numpy()                # [1, N, 3, 3]
-            images_np  = predictions["images"].detach().float().cpu().numpy()     # [1, N, 3, H, W]
-            n_frames   = depth_all.shape[1]
+            depth_all    = predictions["depth"].detach().float().cpu().numpy()      # [1, N, H, W, 1]
+            conf_all     = predictions["depth_conf"].detach().float().cpu().numpy() # [1, N, H, W]
+            extri_all    = extrinsics.detach().float().cpu().numpy()                # [1, N, 3, 4]
+            intri_all    = intrinsics.detach().float().cpu().numpy()                # [1, N, 3, 3]
+            images_np    = predictions["images"].detach().float().cpu().numpy()     # [1, N, 3, H, W]
+            pose_enc_np  = predictions["pose_enc"].detach().float().cpu().numpy()   # [1, N, 9]
+            n_frames     = depth_all.shape[1]
+            img_hw       = (depth_all.shape[2], depth_all.shape[3])               # (H, W)
 
             label_dict: Dict = {}
             all_points: List[np.ndarray] = []
@@ -247,6 +242,8 @@ class VGGTOmegaModel(fom.Model, fom.SamplesMixin):
             for i in range(n_frames):
                 depth_i = depth_all[0, i, :, :, 0]
                 conf_i  = conf_all[0, i]
+                R_i     = extri_all[0, i, :3, :3]
+                t_i     = extri_all[0, i, :3, 3]
                 print(
                     f"[_process_video] Frame {i:03d}: "
                     f"depth [{depth_i.min():.3f}, {depth_i.max():.3f}]  "
@@ -257,6 +254,16 @@ class VGGTOmegaModel(fom.Model, fom.SamplesMixin):
                 self._save_depth_png(depth_i, depth_png)
                 label_dict[i + 1] = fo.Heatmap(map_path=str(depth_png), range=[0, 255])
 
+                # Store camera data directly on the frame — persisted by ctx.save(sample).
+                # camera_translation / camera_rotation_matrix are in OpenCV world coords.
+                # quaternion order: [qw, qx, qy, qz] matching pose_enc convention.
+                sample.frames[i + 1]["camera_translation"]    = t_i.tolist()
+                sample.frames[i + 1]["camera_rotation_matrix"] = R_i.tolist()
+                sample.frames[i + 1]["camera_quaternion"]      = pose_enc_np[0, i, 3:7].tolist()
+                sample.frames[i + 1]["intrinsic_matrix"]       = intri_all[0, i].tolist()
+                sample.frames[i + 1]["fov_h_deg"]              = float(np.degrees(pose_enc_np[0, i, 7]))
+                sample.frames[i + 1]["fov_w_deg"]              = float(np.degrees(pose_enc_np[0, i, 8]))
+
                 pts, cols = self._unproject_and_filter(
                     depth_i, conf_i, extri_all[0, i], intri_all[0, i], images_np[0, i],
                 )
@@ -266,9 +273,16 @@ class VGGTOmegaModel(fom.Model, fom.SamplesMixin):
                     print(f"[_process_video] Frame {i:03d}: {pts.shape[0]:,} points kept")
 
             if all_points:
+                merged_pts = np.concatenate(all_points)
                 scene_fo3d = output_dir / f"{stem}_scene.fo3d"
                 self._save_scene(
-                    np.concatenate(all_points), np.concatenate(all_colors), scene_fo3d
+                    merged_pts,
+                    np.concatenate(all_colors),
+                    extri_all,
+                    intri_all,
+                    pose_enc_np,
+                    img_hw,
+                    scene_fo3d,
                 )
                 sample["scene_3d"] = str(scene_fo3d)
                 print(f"[_process_video] scene_3d → {scene_fo3d}")
@@ -421,27 +435,138 @@ class VGGTOmegaModel(fom.Model, fom.SamplesMixin):
 
     def _save_scene(
         self,
-        points: np.ndarray,  # [N, 3]
-        colors: np.ndarray,  # [N, 3]  values in [0, 1]
+        points: np.ndarray,      # [N, 3]
+        colors: np.ndarray,      # [N, 3]  values in [0, 1]
+        extri_all: np.ndarray,   # [1, N, 3, 4]
+        intri_all: np.ndarray,   # [1, N, 3, 3]
+        pose_enc_np: np.ndarray, # [1, N, 9]
+        img_hw: Tuple[int, int],
         fo3d_path: Path,
     ) -> None:
-        """Save the merged point cloud as a .pcd file and a FiftyOne .fo3d scene.
+        """Save the merged point cloud, camera frustums, and a .fo3d scene file.
+
+        The scene contains:
+          - The merged point cloud (.pcd)
+          - Camera frustum meshes (.obj) showing each sampled camera's position and FoV
+          - An initial PerspectiveCamera view centred on the point cloud
 
         Args:
             points: world-space XYZ [N, 3]
             colors: RGB colours in [0, 1] [N, 3]
-            fo3d_path: destination .fo3d path (.pcd uses same stem)
+            extri_all: decoded extrinsics [1, N, 3, 4] (camera-from-world, OpenCV)
+            intri_all: decoded intrinsics [1, N, 3, 3]
+            pose_enc_np: raw pose encoding [1, N, 9] ([tx,ty,tz,qw,qx,qy,qz,fov_h,fov_w])
+            img_hw: (H, W) of the preprocessed frames
+            fo3d_path: destination .fo3d path (.pcd and .obj use the same stem)
         """
-        pcd_path = fo3d_path.with_suffix(".pcd")
+        n_frames = extri_all.shape[1]
 
+        # --- point cloud ---
+        pcd_path = fo3d_path.with_suffix(".pcd")
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(points)
         pcd.colors = o3d.utility.Vector3dVector(np.clip(colors, 0.0, 1.0))
         o3d.io.write_point_cloud(str(pcd_path), pcd, write_ascii=False)
         print(f"[_save_scene] PCD ({len(points):,} pts) → {pcd_path}")
 
+        # --- camera frustums ---
+        frustum_path = fo3d_path.with_name(fo3d_path.stem + "_cameras.obj")
+        # Scale frustums relative to the median distance from centroid
+        centroid = points.mean(axis=0)
+        median_radius = float(np.percentile(np.linalg.norm(points - centroid, axis=1), 50))
+        frustum_scale = max(median_radius * 0.15, 0.05)
+        self._write_camera_frustums_obj(extri_all, intri_all, img_hw, frustum_scale, frustum_path)
+        print(f"[_save_scene] Camera frustums ({n_frames} cams) → {frustum_path}")
+
+        # --- initial viewer camera (mean position, looking at point cloud centroid) ---
+        camera_centers = np.array(
+            [-extri_all[0, i, :3, :3].T @ extri_all[0, i, :3, 3] for i in range(n_frames)]
+        )
+        mean_position = camera_centers.mean(axis=0)
+        mean_fov_h_deg = float(np.degrees(pose_enc_np[0, :, 7].mean()))
+
+        # --- fo3d scene ---
         scene = fo.Scene()
-        scene.camera = fo.PerspectiveCamera(up="Z")
+        scene.camera = fo.PerspectiveCamera(
+            position=mean_position.tolist(),
+            look_at=centroid.tolist(),
+            up="Z",
+            fov=mean_fov_h_deg,
+        )
         scene.add(fo.PointCloud("pointcloud", str(pcd_path)))
+        scene.add(fo.ObjMesh(
+            "camera_frustums",
+            str(frustum_path),
+            default_material=fo.MeshBasicMaterial(color="#FF6B35", wireframe=True, opacity=0.8),
+        ))
         scene.write(str(fo3d_path))
         print(f"[_save_scene] fo3d → {fo3d_path}")
+
+    def _write_camera_frustums_obj(
+        self,
+        extri_all: np.ndarray,   # [1, N, 3, 4]
+        intri_all: np.ndarray,   # [1, N, 3, 3]
+        img_hw: Tuple[int, int],
+        scale: float,
+        output_path: Path,
+    ) -> None:
+        """Write all camera frustums as a single .obj mesh file.
+
+        Each frustum is a pyramid whose apex is the camera centre and whose base
+        is the image plane projected to ``scale`` metres in front of the camera.
+
+        Args:
+            extri_all: decoded extrinsics [1, N, 3, 4] (camera-from-world, OpenCV)
+            intri_all: decoded intrinsics [1, N, 3, 3]
+            img_hw: (H, W) of the preprocessed frames
+            scale: depth at which to draw the frustum base (world units)
+            output_path: destination .obj file path
+        """
+        H, W = img_hw
+        n_frames = extri_all.shape[1]
+        vertices: List[List[float]] = []
+        faces: List[List[int]] = []
+
+        for i in range(n_frames):
+            R = extri_all[0, i, :3, :3]
+            t = extri_all[0, i, :3, 3]
+            K = intri_all[0, i]
+            fx, fy = K[0, 0], K[1, 1]
+            cx, cy = K[0, 2], K[1, 2]
+
+            # Camera centre in world space
+            C = -R.T @ t
+
+            # 4 image corners in camera space at depth=scale, back-projected through K
+            corners_cam = np.array([
+                [(-cx) / fx,       (-cy) / fy,       1.0],   # top-left
+                [(W - cx) / fx,    (-cy) / fy,       1.0],   # top-right
+                [(W - cx) / fx,    (H - cy) / fy,   1.0],   # bottom-right
+                [(-cx) / fx,       (H - cy) / fy,   1.0],   # bottom-left
+            ]) * scale
+
+            # Transform corners to world space
+            corners_world = (R.T @ corners_cam.T).T + C  # [4, 3]
+
+            # .obj is 1-indexed; track offset for this camera's vertices
+            base = len(vertices) + 1
+            vertices.append(C.tolist())
+            for c in corners_world:
+                vertices.append(c.tolist())
+
+            # 4 side triangles (apex→edge pairs) + 2 base triangles
+            faces += [
+                [base,   base+1, base+2],
+                [base,   base+2, base+3],
+                [base,   base+3, base+4],
+                [base,   base+4, base+1],
+                [base+1, base+3, base+2],
+                [base+1, base+4, base+3],
+            ]
+
+        with open(output_path, "w") as f:
+            f.write("# VGGT-Omega camera frustums\n")
+            for v in vertices:
+                f.write(f"v {v[0]:.6f} {v[1]:.6f} {v[2]:.6f}\n")
+            for face in faces:
+                f.write(f"f {face[0]} {face[1]} {face[2]}\n")
