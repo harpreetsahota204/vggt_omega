@@ -1,9 +1,40 @@
 # VGGT-Omega FiftyOne Zoo Model
 
+<div align="center">
+<p align="center">
+
+<!-- prettier-ignore -->
+<img src="https://user-images.githubusercontent.com/25985824/106288517-2422e000-6216-11eb-871d-26ad2e7b1e59.png" height="55px"> &nbsp;
+<img src="https://user-images.githubusercontent.com/25985824/106288518-24bb7680-6216-11eb-8f10-60052c519586.png" height="50px">
+
+**The open-source tool for building high-quality datasets and computer vision
+models**
+
+---
+
+<!-- prettier-ignore -->
+<a href="https://voxel51.com/fiftyone?utm_source=harpreet-gh">Website</a> •
+<a href="https://docs.voxel51.com?utm_source=harpreet-gh">Docs</a> •
+<a href="https://colab.research.google.com/github/voxel51/fiftyone-examples/blob/master/examples/quickstart.ipynb?utm_source=harpreet-gh">Try it Now</a> •
+<a href="https://docs.voxel51.com/getting_started_guides/index.html?utm_source=harpreet-gh">Getting Started Guides</a> •
+<a href="https://docs.voxel51.com/tutorials/index.html?utm_source=harpreet-gh">Tutorials</a> •
+<a href="https://voxel51.com/blog/?utm_source=harpreet-gh">Blog</a> •
+<a href="https://discord.gg/fiftyone-community?utm_source=harpreet-gh">Community</a>
+
+[![Discord](https://img.shields.io/badge/Discord-7289DA?logo=discord&logoColor=white)](https://discord.gg/fiftyone-community)
+[![Hugging Face](https://img.shields.io/badge/Hugging_Face-purple?style=flat&logo=huggingface)](https://huggingface.co/Voxel51)
+[![Voxel51 Blog](https://img.shields.io/badge/Voxel51_Blog-ff6d04?style=flat)](https://voxel51.com/blog)
+[![Newsletter](https://img.shields.io/badge/Newsletter-BE5B25?logo=mail.ru&logoColor=white)](https://share.hsforms.com/1zpJ60ggaQtOoVeBqIZdaaA2ykyk)
+[![LinkedIn](https://img.shields.io/badge/In-white?style=flat&label=Linked&labelColor=blue)](https://www.linkedin.com/company/voxel51)
+[![Twitter](https://img.shields.io/badge/Twitter-000000?logo=x&logoColor=white)](https://x.com/voxel51)
+[![Medium](https://img.shields.io/badge/Medium-12100E?logo=medium&logoColor=white)](https://medium.com/voxel51)
+
+</p>
+</div>
+
 <p align="center">
   <img src="vggt-omega.gif" alt="VGGT-Omega demo"/>
 </p>
-
 
 [VGGT-Omega](https://vggt-omega.github.io/) (CVPR 2026) by Meta AI and Oxford VGG takes a video and reconstructs the 3D scene from it — estimating depth for every frame and building a single merged 3D point cloud, all in one forward pass. No iterative refinement, no Structure-from-Motion pipeline.
 
