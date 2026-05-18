@@ -65,6 +65,7 @@ def load_model(
     model_path=None,
     confidence_threshold=50.0,
     video_sample_fps=2.0,
+    max_frames=16,
     image_resolution=None,
     enable_alignment=False,
     **kwargs,
@@ -104,6 +105,7 @@ def load_model(
         "model_path": model_path,
         "confidence_threshold": confidence_threshold,
         "video_sample_fps": video_sample_fps,
+        "max_frames": max_frames,
         "image_resolution": image_resolution,
         "enable_alignment": enable_alignment,
     }
@@ -131,8 +133,19 @@ def resolve_input(model_name, ctx):
         default=2.0,
         label="Video Sample FPS",
         description=(
-            "Frames per second to sample from the input video. "
-            "Higher values → denser temporal coverage but more GPU memory."
+            "Target frames per second to sample from the video. "
+            "Automatically reduced for long videos to stay within max_frames."
+        ),
+    )
+
+    inputs.int(
+        "max_frames",
+        default=16,
+        label="Max Frames",
+        description=(
+            "Hard cap on the total number of frames fed to VGGT-Omega in one "
+            "forward pass. Keeps GPU memory bounded regardless of video length. "
+            "8–16 is a good range; 32+ will require significant VRAM."
         ),
     )
 
