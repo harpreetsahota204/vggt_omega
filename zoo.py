@@ -320,11 +320,16 @@ class VGGTOmegaModel(fom.Model, fom.SamplesMixin):
                 depth_png_path = output_dir / f"{stem}_frame_{i:06d}_depth.png"
                 self._save_depth_png(depth_i, depth_png_path)
 
-                # Store in label dict using 1-based frame number (FiftyOne convention)
+                # Store Heatmap directly (not wrapped in a nested dict).
+                # FiftyOne's add_labels sees non-dict values and uses label_field
+                # as the frame field name, so frames end up with sample.frames[i][label_field].
+                # Callers should use apply_model(model, "depth_map", ...) so the field
+                # is named "depth_map" on every frame.
                 fo_frame_num = i + 1
-                label_dict[fo_frame_num] = {
-                    "depth_map_path": str(depth_png_path)
-                }
+                label_dict[fo_frame_num] = fo.Heatmap(
+                    map_path=str(depth_png_path),
+                    range=[0, 255],
+                )
 
                 # Accumulate world-space points for merged cloud
                 pts, cols = self._unproject_and_filter(
@@ -472,7 +477,11 @@ class VGGTOmegaModel(fom.Model, fom.SamplesMixin):
     # ------------------------------------------------------------------
 
     def _save_depth_png(self, depth: np.ndarray, output_path: Path) -> None:
-        """Normalise a depth map and save as a JET-colourised PNG.
+        """Normalise a depth map and save as a single-channel grayscale PNG.
+
+        Saves a uint8 single-channel image so that fo.Heatmap(map_path=...,
+        range=[0, 255]) renders correctly in the FiftyOne App (FiftyOne applies
+        its own colormap overlay on single-channel heatmap images).
 
         Args:
             depth: raw depth values, shape [H, W]
@@ -498,8 +507,7 @@ class VGGTOmegaModel(fom.Model, fom.SamplesMixin):
 
             norm[~valid_mask] = 0.0
             depth_uint8 = (norm * 255).astype(np.uint8)
-            depth_colored = cv2.applyColorMap(depth_uint8, cv2.COLORMAP_JET)
-            cv2.imwrite(str(output_path), depth_colored)
+            cv2.imwrite(str(output_path), depth_uint8)
 
         except Exception as exc:
             logger.error(
