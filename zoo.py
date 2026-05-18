@@ -64,20 +64,22 @@ class VGGTOmegaModelConfig(fout.TorchImageModelConfig):
         self.model_name = self.parse_string(d, "model_name", default="facebook/VGGT-Omega-1B-512")
         self.model_path = self.parse_string(d, "model_path")
         self.confidence_threshold = self.parse_number(d, "confidence_threshold", default=50.0)
-        self.video_sample_fps = self.parse_number(d, "video_sample_fps", default=2.0)
-        self.max_frames = self.parse_number(d, "max_frames", default=16)
+        self.video_sample_fps = self.parse_number(d, "video_sample_fps", default=1.0)
+        self.max_frames = self.parse_number(d, "max_frames", default=50)
         self.image_resolution = self.parse_number(d, "image_resolution", default=512)
+        self.preprocessing_mode = self.parse_string(d, "preprocessing_mode", default="balanced")
         self.enable_alignment = self.parse_bool(d, "enable_alignment", default=False)
 
         print(
             f"[VGGTOmegaModelConfig] Initialised:\n"
-            f"  model_name        = {self.model_name}\n"
-            f"  model_path        = {self.model_path}\n"
-            f"  confidence_thresh = {self.confidence_threshold}\n"
-            f"  video_sample_fps  = {self.video_sample_fps}\n"
-            f"  max_frames        = {self.max_frames}\n"
-            f"  image_resolution  = {self.image_resolution}\n"
-            f"  enable_alignment  = {self.enable_alignment}"
+            f"  model_name          = {self.model_name}\n"
+            f"  model_path          = {self.model_path}\n"
+            f"  confidence_thresh   = {self.confidence_threshold}\n"
+            f"  video_sample_fps    = {self.video_sample_fps}\n"
+            f"  max_frames          = {self.max_frames}\n"
+            f"  image_resolution    = {self.image_resolution}\n"
+            f"  preprocessing_mode  = {self.preprocessing_mode}\n"
+            f"  enable_alignment    = {self.enable_alignment}"
         )
 
 
@@ -217,6 +219,7 @@ class VGGTOmegaModel(fom.Model, fom.SamplesMixin):
 
             images = load_and_preprocess_images(
                 frame_paths,
+                mode=self.config.preprocessing_mode,
                 image_resolution=int(self.config.image_resolution),
             ).to(self._device)
             print(f"[_process_video] Preprocessed shape: {tuple(images.shape)}")

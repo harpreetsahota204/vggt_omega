@@ -64,9 +64,10 @@ def load_model(
     model_name=None,
     model_path=None,
     confidence_threshold=50.0,
-    video_sample_fps=2.0,
-    max_frames=16,
+    video_sample_fps=1.0,
+    max_frames=50,
     image_resolution=None,
+    preprocessing_mode="balanced",
     enable_alignment=False,
     **kwargs,
 ):
@@ -107,6 +108,7 @@ def load_model(
         "video_sample_fps": video_sample_fps,
         "max_frames": max_frames,
         "image_resolution": image_resolution,
+        "preprocessing_mode": preprocessing_mode,
         "enable_alignment": enable_alignment,
     }
     config_dict.update(kwargs)
@@ -140,12 +142,24 @@ def resolve_input(model_name, ctx):
 
     inputs.int(
         "max_frames",
-        default=16,
+        default=50,
         label="Max Frames",
         description=(
-            "Hard cap on the total number of frames fed to VGGT-Omega in one "
-            "forward pass. Keeps GPU memory bounded regardless of video length. "
-            "8–16 is a good range; 32+ will require significant VRAM."
+            "Hard cap on frames per forward pass. Based on official benchmarks "
+            "(A100, 624x416 inputs): ~7GB for 16 frames, ~10GB for 50, "
+            "~13GB for 100, ~21GB for 200."
+        ),
+    )
+
+    inputs.enum(
+        "preprocessing_mode",
+        values=["balanced", "max_size"],
+        default="balanced",
+        label="Preprocessing Mode",
+        description=(
+            "'balanced' keeps total token count ≈ image_resolution² (default). "
+            "'max_size' resizes the longest side to image_resolution — "
+            "uses less memory per frame at the cost of some detail."
         ),
     )
 
