@@ -358,20 +358,37 @@ class VGGTOmegaModel(fom.Model, fom.SamplesMixin):
                 )
                 self._save_empty_scene(scene_fo3d_path)
 
-            # Step 7 – optional text alignment embedding
-            if self.config.enable_alignment and "text_alignment_embedding" in predictions:
-                emb = (
-                    predictions["text_alignment_embedding"]
-                    .detach().float().cpu().numpy()
-                )
-                label_dict["text_alignment_embedding"] = emb.tolist()
+            # Step 7 – store sample-level fields directly on the sample object.
+            # FiftyOne's _apply_video_model calls ctx.save(sample) after predict()
+            # returns, so any fields set here are persisted automatically.
+            # We must NOT include sample-level string values in the returned dict
+            # because add_labels() expects all values to be frame-level dicts when
+            # any value is a dict (it iterates every entry calling .items()).
+            if sample is not None:
+                sample["scene_3d"] = str(scene_fo3d_path)
                 print(
-                    f"[_process_video] Text alignment embedding shape: {emb.shape}"
+                    f"[_process_video] Set sample['scene_3d'] = {scene_fo3d_path}"
                 )
 
-            # Sample-level scene fo3d goes under a string key
-            label_dict["scene_3d"] = str(scene_fo3d_path)
+                if self.config.enable_alignment and "text_alignment_embedding" in predictions:
+                    emb = (
+                        predictions["text_alignment_embedding"]
+                        .detach().float().cpu().numpy()
+                    )
+                    sample["text_alignment_embedding"] = emb.tolist()
+                    print(
+                        f"[_process_video] Set sample['text_alignment_embedding'] "
+                        f"(shape {emb.shape})"
+                    )
+            else:
+                logger.warning(
+                    "[_process_video] sample is None — scene_3d cannot be stored "
+                    "on the sample directly."
+                )
 
+            # Return ONLY frame-level labels.
+            # FiftyOne's add_labels() receives this dict and routes each integer
+            # key to sample.frames[frame_number] with the nested field dict.
             print(
                 f"[_process_video] Done. "
                 f"scene_3d → {scene_fo3d_path}  |  "
